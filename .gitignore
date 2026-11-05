@@ -1,0 +1,25 @@
+# Virtual environments (never commit)
+.venv/
+venv/
+# old Linux venv from Ubuntu - not usable on Windows
+.venv_linux_old/
+
+# Python cache
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local-only material:
+# reports/ holds the paper drafts, the project documentation bundle and third-party
+# literature PDFs. Remove this line if you decide to publish your own report.
+reports/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# OS / editor clutter
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+.idea/

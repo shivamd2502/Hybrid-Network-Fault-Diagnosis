@@ -1,586 +1,128 @@
-# 🔧 Network Troubleshooting Assistant - AI-Powered Diagnosis Bot
+# Hybrid Network Fault Diagnosis (ML + Expert System + Bayesian Fusion)
 
-![Python](https://img.shields.io/badge/Python-3.8+-blue)
-![scikit-learn](https://img.shields.io/badge/scikit--learn-1.3.0-orange)
-![Streamlit](https://img.shields.io/badge/Streamlit-1.28.0-red)
-![License](https://img.shields.io/badge/License-MIT-green)
+A network troubleshooting assistant that diagnoses **8 common network faults** from a
+plain-English symptom description plus 10 diagnostic measurements. It combines:
 
-**An intelligent machine learning system that diagnoses network issues using Decision Trees and NLP processing.**
+1. a **TF-IDF + Random Forest** pipeline (pattern learning from text and measurements),
+2. an **RFC-grounded expert rule engine** (8 priority-ordered rules based on RFC 826, 1035, 1122, 2131),
+3. a **predictive-entropy uncertainty estimator** built from the forest's 200 trees, and
+4. an **uncertainty-weighted Bayesian fusion layer** that reconciles the two experts,
 
----
+all served through a three-step **Streamlit** web app with confidence scores, rule traces
+and step-by-step remediation.
 
-## 🎯 Project Overview
+Fault classes: Router Issue · DNS Issue · DNS Timeout · IP Conflict · DHCP Failure ·
+Gateway Unreachable · Network Adapter Issue · Subnet Mismatch.
 
-This project builds a **complete ML-powered network diagnostics bot** that:
+<p align="center">
+  <img src="docs/images/architecture.png" alt="System architecture" width="640">
+</p>
 
-✅ **Processes natural language** descriptions of network problems  
-✅ **Extracts diagnostic features** using NLP techniques  
-✅ **Predicts root causes** using a trained Decision Tree classifier  
-✅ **Provides step-by-step solutions** for each diagnosed issue  
-✅ **Manages multi-turn conversations** with follow-up questions  
-✅ **Delivers 86.7% accuracy** on network issue diagnosis  
+## Results
 
----
+Measured with `python src/evaluate.py` on the synthetic dataset (1,200 samples, stratified
+80/20 split, seed 42). Full analysis: [docs/RESULTS.md](docs/RESULTS.md).
 
-## 📊 Supported Network Issues
+| System | Test accuracy | Notes |
+|---|---:|---|
+| **RF pipeline** (TF-IDF + structured features) | **99.58 %** (239/240) | 5-fold CV on the training set: **99.58 % ± 0.21 %** |
+| Rule engine only | 94.17 % | no learning, fully explainable |
+| Hybrid (RF + rules + Bayesian fusion) | 95.42 % | changes 10 RF predictions, all 10 for the worse |
+| RF, structured features only | 95.42 % | ablation |
+| TF-IDF text only | 100.00 % | the text is a lookup key on this data (see caveats) |
 
-| Issue Type | Description | Example |
-|-----------|-------------|---------|
-| 🔌 **Router Issue** | Cannot reach gateway/router | WiFi on but no internet |
-| 🔗 **DNS Issue** | Cannot resolve domain names | Can ping IP but not google.com |
-| 📍 **IP Conflict** | Duplicate IP addresses detected | IP conflict warning shown |
-| 📤 **DHCP Failure** | No IP address assigned | 169.254 self-assigned IP |
-| 🌐 **Gateway Unreachable** | Gateway offline/misconfigured | Cannot ping default gateway |
-| 🖥️ **Network Adapter Issue** | Physical interface disabled | Ethernet adapter down |
-| 📏 **Subnet Mismatch** | Device on wrong subnet | Cannot reach gateway on same network |
-| ⏱️ **DNS Timeout** | DNS server not responding | Sites loading very slowly |
+**What the hybrid layer adds:** explanations (RFC rule traces, fusion strategy), better
+calibration (expected calibration error 0.042 vs 0.071 for the RF) and an uncertainty
+signal: correct predictions average u = 0.13, the RF's single test error has u = 0.56, and
+10.8 % of test cases cross the u > 0.30 review threshold.
+**What it costs:** on this dataset the rule override lowers accuracy from 99.58 % to 95.42 %.
 
----
+On 9 hand-written scenarios phrased in new words ([tests/scenarios.json](tests/scenarios.json)),
+the RF gets 9/9 and the hybrid 8/9.
 
-## 🏗️ Architecture Overview
+> **Caveats:** the data is synthetic. Each class uses only 20 fixed symptom sentences,
+> and every test sentence also appears in training, so the text features act as a label
+> lookup. The accuracy figures describe this generator, not real help-desk traffic.
+> See [docs/RESULTS.md](docs/RESULTS.md#4-limitations).
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     USER INTERFACE (Streamlit)              │
-│  - Symptom input form                                       │
-│  - Follow-up question dialog                                │
-│  - Diagnosis display with confidence                        │
-│  - Solution recommendations                                 │
-│  - Diagnosis history & export                               │
-└───────────────┬───────────────────────────────────────────┘
-                │
-┌───────────────▼───────────────────────────────────────────┐
-│              INFERENCE MODULE (network_inference.py)        │
-│  - NLP symptom extraction                                   │
-│  - Conversation state management                            │
-│  - Feature vector construction                              │
-│  - Model prediction & confidence scoring                    │
-└───────────────┬───────────────────────────────────────────┘
-                │
-┌───────────────▼───────────────────────────────────────────┐
-│           ML MODEL (Trained Decision Tree)                  │
-│  - Input: 10 diagnostic features                            │
-│  - Output: 8 issue categories (+ confidence)                │
-│  - Accuracy: 86.7%                                          │
-│  - Tree depth: 4 levels                                     │
-└───────────────┬───────────────────────────────────────────┘
-                │
-┌───────────────▼───────────────────────────────────────────┐
-│            DATA LAYER (models/ directory)                   │
-│  - dt_model.pkl (trained classifier)                        │
-│  - encoders.pkl (feature encoders)                          │
-│  - metadata.json (model info)                               │
-│  - network_dataset.csv (training data)                      │
-└─────────────────────────────────────────────────────────────┘
-```
+<p align="center">
+  <img src="results/figures/confusion_rf.png" alt="RF confusion matrix" width="45%">
+  <img src="results/figures/confusion_hybrid.png" alt="Hybrid confusion matrix" width="45%">
+</p>
 
----
-
-## 🚀 Quick Start (5 Minutes)
-
-### 1. Clone & Setup
-```bash
-# Clone repository
-git clone <repo-url>
-cd network-troubleshooting-bot
-
-# Create virtual environment (optional but recommended)
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
-
-### 2. Install Dependencies
-```bash
-pip install -r requirements.txt
-```
-
-### 3. Generate Dataset & Train Model
-```bash
-# Generate 300 synthetic network issue samples
-python network_troubleshooting_dataset.py
-
-# Train Decision Tree classifier
-python network_troubleshooting_training.py
-```
-
-### 4. Launch Web App
-```bash
-streamlit run app_streamlit.py
-```
-
-**Open browser:** http://localhost:8501
-
----
-
-## 📁 Project Structure
+## Repository structure
 
 ```
-network-troubleshooting-bot/
-│
-├── 📄 README.md (this file)
-├── 📄 EXECUTION_GUIDE.md (detailed step-by-step)
-├── 📄 requirements.txt (dependencies)
-│
-├── 🐍 PYTHON MODULES
-│   ├── network_troubleshooting_dataset.py
-│   │   └── Generates synthetic dataset with 300 samples
-│   │
-│   ├── network_troubleshooting_training.py
-│   │   └── Complete ML training pipeline (data → model → evaluation)
-│   │
-│   ├── network_inference.py
-│   │   └── NLP + inference engine for real-time diagnosis
-│   │
-│   └── app_streamlit.py
-│       └── Interactive web interface
-│
-├── 📊 GENERATED FILES (after running)
-│   ├── network_dataset.csv
-│   │   └── 300 training samples with features & labels
-│   │
-│   └── models/
-│       ├── dt_model.pkl
-│       │   └── Trained Decision Tree classifier
-│       │
-│       ├── encoders.pkl
-│       │   └── Categorical feature encoders
-│       │
-│       ├── metadata.json
-│       │   └── Model info & feature names
-│       │
-│       ├── decision_tree.png
-│       │   └── Tree visualization
-│       │
-│       └── decision_tree.txt
-│           └── Rules in human-readable format
+Hybrid-Network-Fault-Diagnosis/
+├── src/
+│   ├── config.py           # paths, feature schema, classes, remediation steps
+│   ├── dataset.py          # synthetic dataset generator (reproduces data/ exactly)
+│   ├── train.py            # TF-IDF + Random Forest training, proper 5-fold CV
+│   ├── rule_engine.py      # RFC-grounded expert rules (decision list)
+│   ├── rf_uncertainty.py   # entropy / mutual information / inter-tree variance
+│   ├── bayesian_fusion.py  # consensus / override / Bayesian averaging
+│   ├── hybrid_system.py    # end-to-end hybrid diagnosis
+│   ├── evaluate.py         # all reported metrics, ablations, scenarios, figures
+│   └── app.py              # Streamlit web application
+├── data/network_dataset_v3.csv
+├── models/                 # pipeline.pkl, encoders.pkl, training_report.json
+├── results/                # metrics.json, evaluation_report.md, figures/
+├── tests/                  # pytest suite + 15 hand-written scenarios
+├── docs/                   # methodology, results, Windows setup, migration notes
+├── archive/                # earlier Decision-Tree version and original sources
+├── requirements.txt
+└── setup_env.ps1           # one-command Windows environment setup
 ```
 
----
+## Quick start (Windows 11, PowerShell)
 
-## 🔍 Workflow Example
+Requirements: Python 3.10–3.12 (tested with 3.12) and Git.
 
-### User Input
-```
-"Internet is down but WiFi connected. 
- Can ping IP but websites don't load."
-```
+```powershell
+git clone https://github.com/shivamd2502/Hybrid-Network-Fault-Diagnosis.git
+cd Hybrid-Network-Fault-Diagnosis
+powershell -ExecutionPolicy Bypass -File .\setup_env.ps1
+.\.venv\Scripts\Activate.ps1
 
-### NLP Processing
-```
-Extract Features:
-├── ping_gateway: 1 (assumed from WiFi connection)
-├── has_ip: 1 (successfully connected)
-├── ping_ip: 1 (explicitly stated)
-├── ping_domain: 0 (explicitly stated failure)
-├── ip_conflict: 0 (no mention)
-├── network_type: WiFi
-└── os_type: Unknown (ask in follow-up)
+streamlit run src\app.py          # web app at http://localhost:8501
 ```
 
-### Follow-up Questions
-```
-Bot: "Can you ping your default gateway? (yes/no)"
-Bot: "Does your device have an IP assigned? (yes/no)"
-Bot: "What OS are you using? (windows/mac/linux)"
-```
+Reproduce everything from scratch:
 
-### User Answers
-```
-User: Yes, Yes, Windows
+```powershell
+python src\dataset.py             # regenerate data\network_dataset_v3.csv (byte-identical)
+python src\train.py               # train + 5-fold CV -> models\
+python src\evaluate.py            # metrics, ablations, scenarios -> results\
+python -m pytest tests -q         # 23 tests
 ```
 
-### Prediction
-```
-Input Features: [1, 1, 1, 0, 0, 1, 2, 0, 0, 0]
-                  ↓
-          Decision Tree Inference
-                  ↓
-Predicted Issue: "DNS Issue"
-Confidence: 87%
-```
-
-### Solutions Provided
-```
-✓ Change DNS to 8.8.8.8 (Google DNS)
-✓ Flush DNS cache - ipconfig /flushdns
-✓ Restart network adapter
-✓ Test with nslookup google.com
-✓ Try Cloudflare DNS (1.1.1.1)
-✓ Check router DNS settings
-```
-
----
-
-## 📊 Model Performance
-
-### Overall Metrics
-```
-Test Accuracy:             86.67%
-Weighted Precision:        86.50%
-Weighted Recall:           86.67%
-F1-Score:                  0.8655
-Cross-Val (5-Fold):        87.50% ± 2.28%
-```
-
-### Per-Class Performance
-```
-┌────────────────────────┬───────────┬────────┬──────────┐
-│ Diagnosis              │ Precision │ Recall │ F1-Score │
-├────────────────────────┼───────────┼────────┼──────────┤
-│ Router Issue           │   0.83    │  0.83  │   0.83   │
-│ DNS Issue              │   0.86    │  0.86  │   0.86   │
-│ IP Conflict            │   0.75    │  0.75  │   0.75   │
-│ DHCP Failure           │   0.89    │  0.89  │   0.89   │
-│ Gateway Unreachable    │   0.88    │  0.88  │   0.88   │
-│ Network Adapter Issue  │   0.89    │  0.89  │   0.89   │
-│ Subnet Mismatch        │   0.86    │  0.86  │   0.86   │
-│ DNS Timeout            │   0.85    │  0.86  │   0.86   │
-└────────────────────────┴───────────┴────────┴──────────┘
-```
-
-### Feature Importance
-```
-ping_gateway        ████████████████████ 34.21%
-ping_domain         ████████████████ 28.47%
-ping_ip             ███████████ 19.63%
-ip_conflict         ██████ 9.87%
-has_ip              ████ 6.54%
-other               █ 1.28%
-```
-
----
-
-## 🎓 Technical Details
-
-### Dataset Generation
-- **Method:** Synthetic data generation based on networking rules
-- **Samples:** 300 (balanced across 8 classes)
-- **Features:** 10 (6 binary diagnostic + 3 categorical + 1 text)
-- **Labels:** 8 network issue categories
-
-### Feature Engineering
-```python
-Features extracted from user text:
-├── ping_gateway (binary)    - Can reach router?
-├── has_ip (binary)          - IP assigned?
-├── ping_ip (binary)         - Any IP reachable?
-├── ping_domain (binary)     - Domain resolvable?
-├── ip_conflict (binary)     - Duplicate IP?
-├── network_type (categorical) - WiFi or Ethernet
-├── os_type (categorical)    - OS type
-├── recently_updated (binary) - System updated?
-├── vpn_enabled (binary)     - VPN active?
-└── firewall_enabled (binary) - Firewall on?
-```
-
-### Model Architecture
-```
-Decision Tree Classifier
-├── Max Depth: 5
-├── Criterion: Gini Impurity
-├── Min Samples Split: 5
-├── Min Samples Leaf: 2
-├── Tree Depth: 4 (actual)
-├── Number of Leaves: 12
-└── Interpretability: High (white-box model)
-```
-
-### NLP Processing
-```python
-SymptomExtractor:
-├── Binary Feature Extraction
-│   └── Keyword matching for yes/no answers
-├── Categorical Feature Extraction
-│   ├── Network type detection (WiFi/Ethernet)
-│   └── OS detection (Windows/macOS/Linux)
-└── Follow-up Question Generation
-    └── Dynamic Q&A for missing features
-```
-
----
-
-## 💻 Code Highlights
-
-### Dataset Generation
-```python
-from network_troubleshooting_dataset import create_full_dataset
-
-# Generate 300 synthetic network issue samples
-dataset = create_full_dataset(num_samples=300, save_to_csv=True)
-
-# Output: network_dataset.csv with features & solutions
-```
-
-### Model Training
-```python
-from network_troubleshooting_training import main
-
-# Complete training pipeline
-main()
-
-# Output: models/ directory with trained model
-```
-
-### Making Predictions
-```python
-from network_inference import DiagnosticSession
-
-# Initialize session
-session = DiagnosticSession(model_dir='models')
-
-# User input
-symptom = "Internet not working but WiFi connected"
-features, follow_up = session.start_diagnosis(symptom)
-
-# Answer follow-ups
-responses = {'ping_gateway': 1, 'has_ip': 1}
-diagnosis, confidence, solutions = session.answer_follow_up(responses)
-
-print(f"{diagnosis} ({confidence:.0%} confidence)")
-```
-
-### Web Interface
-```python
-import streamlit as st
-from network_inference import DiagnosticSession
-
-# Launch interactive app
-streamlit run app_streamlit.py
-```
-
----
-
-## 🔧 Configuration & Customization
-
-### Adjust Dataset Size
-```python
-# In network_troubleshooting_dataset.py, line ~300
-dataset = create_full_dataset(num_samples=500)  # Instead of 300
-```
-
-### Modify Model Hyperparameters
-```python
-# In network_troubleshooting_training.py, line ~200
-dt_model = DecisionTreeClassifier(
-    max_depth=7,           # Increase depth for more complex patterns
-    min_samples_split=3,   # Lower to allow smaller splits
-    criterion='entropy',   # Or 'gini'
-    random_state=42
-)
-```
-
-### Add More Issue Categories
-```python
-# In network_troubleshooting_dataset.py, line ~30
-NETWORK_ISSUES = {
-    "Your New Issue": {
-        "description": "...",
-        "keywords": [...],
-        "symptoms": {...}
-    },
-    ...
-}
-```
-
----
-
-## 📈 Model Evaluation Metrics Explained
-
-| Metric | Formula | Interpretation |
-|--------|---------|-----------------|
-| **Accuracy** | (TP+TN) / Total | Overall correctness |
-| **Precision** | TP / (TP+FP) | False positive rate (low = good) |
-| **Recall** | TP / (TP+FN) | False negative rate (high = good) |
-| **F1-Score** | 2×(P×R)/(P+R) | Harmonic mean (balanced metric) |
-
-**Legend:** TP=True Positive, FP=False Positive, TN=True Negative, FN=False Negative
-
----
-
-## 🚀 Deployment Options
-
-### Option 1: Streamlit Cloud (Recommended)
-```bash
-# 1. Push to GitHub
-git push origin main
-
-# 2. Go to https://share.streamlit.io/
-# 3. Connect your GitHub repo
-# 4. Deploy with one click!
-```
-
-### Option 2: Docker
-```bash
-# Build image
-docker build -t network-bot .
-
-# Run container
-docker run -p 8501:8501 network-bot
-```
-
-### Option 3: Heroku
-```bash
-heroku create network-troubleshooting-bot
-git push heroku main
-```
-
-### Option 4: AWS/Azure/GCP
-```bash
-# Package as Lambda function or Cloud Run service
-# Include models/ directory in deployment
-```
-
----
-
-## 🎯 Learning Outcomes
-
-### Machine Learning Concepts
-✅ Supervised Classification  
-✅ Decision Trees & Tree Pruning  
-✅ Feature Engineering & Preprocessing  
-✅ Train-Test Split & Cross-Validation  
-✅ Model Evaluation Metrics  
-✅ Hyperparameter Tuning  
-
-### Software Engineering
-✅ Modular Code Design  
-✅ Object-Oriented Programming  
-✅ Model Serialization (Pickle)  
-✅ API Design  
-✅ Testing & Validation  
-
-### NLP & Text Processing
-✅ Keyword Extraction  
-✅ Intent Detection  
-✅ Feature Extraction from Text  
-✅ Conversation Management  
-
-### Networking Knowledge
-✅ OSI Model  
-✅ Common Network Issues  
-✅ Diagnostic Tools (ping, ipconfig, nslookup)  
-✅ Troubleshooting Methodology  
-
----
-
-## 📚 Resources & References
-
-### Machine Learning
-- [scikit-learn Decision Trees](https://scikit-learn.org/stable/modules/tree.html)
-- [Decision Tree Visualization](https://scikit-learn.org/stable/modules/generated/sklearn.tree.plot_tree.html)
-- [Cross-validation Guide](https://scikit-learn.org/stable/modules/cross_validation.html)
-
-### NLP
-- [NLTK Documentation](https://www.nltk.org/)
-- [spaCy Library](https://spacy.io/)
-- [TF-IDF Vectorizer](https://scikit-learn.org/stable/modules/generated/sklearn.feature_extraction.text.TfidfVectorizer.html)
-
-### Streamlit
-- [Official Documentation](https://docs.streamlit.io/)
-- [Component Gallery](https://streamlit.io/components)
-- [Deployment Guide](https://docs.streamlit.io/streamlit-cloud/get-started)
-
-### Networking
-- [Cisco Networking Basics](https://www.cisco.com/c/en/us/support/docs/networking/index.html)
-- [CompTIA Network+](https://www.comptia.org/certifications/network)
-- [Network Troubleshooting Guide](https://www.professormesser.com/)
-
----
-
-## 🐛 Troubleshooting
-
-### Models not found
-```bash
-python network_troubleshooting_training.py
-# Ensure models/ directory is created with 3 files
-ls -la models/
-```
-
-### Streamlit port already in use
-```bash
-streamlit run app_streamlit.py --server.port 8502
-```
-
-### Package import errors
-```bash
-pip install --upgrade -r requirements.txt
-```
-
-### Inference returning None
-```python
-# Ensure model_dir='models' contains all 3 files
-from network_inference import DiagnosticSession
-session = DiagnosticSession(model_dir='models')  # Full path if needed
-```
-
----
-
-## 📝 Citation & Academic Use
-
-If using this project for academic purposes:
-
-```bibtex
-@misc{network_troubleshooting_bot_2026,
-  title={Network Troubleshooting Assistant: An AI-Powered Diagnostic System Using Decision Trees and NLP},
-  author={Your Name},
-  year={2026},
-  url={https://github.com/your-repo/network-troubleshooting-bot}
-}
-```
-
----
-
-## 🤝 Contributing
-
-Contributions welcome! Areas for improvement:
-
-- [ ] Add more issue categories (Firewall, Proxy, VPN)
-- [ ] Implement Random Forest for higher accuracy
-- [ ] Add voice interface
-- [ ] Create mobile app (React Native)
-- [ ] Integrate with actual network tools (ping API)
-- [ ] Add user feedback loop for continuous learning
-- [ ] Expand to 1000+ training samples
-
----
-
-## 📄 License
-
-MIT License - See LICENSE file for details
-
----
-
-## 👨‍💻 Author
-
-Created as a comprehensive ML portfolio project demonstrating:
-- Full ML pipeline from data generation to deployment
-- NLP processing for conversational AI
-- Professional code structure and documentation
-- Real-world application (network diagnostics)
-
----
-
-## ⭐ Show Your Support
-
-If this project helped you:
-- ⭐ Star this repository
-- 🔗 Share with others
-- 📧 Provide feedback
-- 🤝 Contribute improvements
-
----
-
-## 📞 Support
-
-For issues, questions, or suggestions:
-1. Check EXECUTION_GUIDE.md for detailed steps
-2. Review code comments in each Python file
-3. Open an issue on GitHub
-4. Contact: your-email@example.com
-
----
-
-**Happy Troubleshooting! 🔧🚀**
-
-*Last Updated: February 2026*
-*Version: 1.0.0*
+Linux/macOS: `python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt`,
+then the same commands with `/` paths.
+
+## How a diagnosis is made
+
+1. **Symptom text** -> TF-IDF (100 uni/bi-grams); **measurements** -> 7 binary flags
+   (gateway ping, valid IP, external ping, DNS resolution, IP conflict, ARP OK, subnet match)
+   and 3 metrics (DNS response time, packet loss, traceroute hops), plus connection type and OS.
+2. The **Random Forest** (200 trees) outputs a probability per class. Its normalised entropy
+   `u = H / ln 8` is the uncertainty.
+3. The **rule engine** fires the first matching RFC rule (for example "ping IP works,
+   domains fail, DNS > 8 s -> DNS Timeout, 0.82") and spreads the remaining probability
+   over partially matching classes.
+4. **Fusion:** if both agree -> consensus. If they disagree and only one is confident
+   (u < 0.30) -> that one wins. Otherwise -> reliability-weighted Bayesian average.
+
+Details and equations: [docs/METHODOLOGY.md](docs/METHODOLOGY.md) and
+[docs/Hybrid_Diagnostic_System_Math_Architecture.pdf](docs/Hybrid_Diagnostic_System_Math_Architecture.pdf).
+
+## Documentation
+
+- [docs/METHODOLOGY.md](docs/METHODOLOGY.md): dataset design, model, rules, uncertainty, fusion
+- [docs/RESULTS.md](docs/RESULTS.md): all results, comparison with earlier reported numbers, limitations
+- [docs/WINDOWS_SETUP.md](docs/WINDOWS_SETUP.md): environment, running the app, troubleshooting
+- [docs/MIGRATION_NOTES.md](docs/MIGRATION_NOTES.md): what changed moving from Ubuntu to Windows
+- [archive/README.md](archive/README.md): earlier versions kept for reference
+
+## Publication
+
+Accepted at **IEEE KALINGACONF'26**.

@@ -1,23 +1,25 @@
 """
-NETWORK TROUBLESHOOTING ASSISTANT — STREAMLIT APP v3.1
-=======================================================
-Updated to match the final training pipeline which uses:
-  - ColumnTransformer (TF-IDF on symptom_text + passthrough numeric/categorical)
-  - RandomForestClassifier (no CalibratedClassifierCV wrapper)
-  - Saved as models/pipeline.pkl + models/encoders.pkl
+NETWORK TROUBLESHOOTING ASSISTANT - STREAMLIT APP
+=================================================
+Three-step web UI around the hybrid system (RF pipeline + RFC rules + uncertainty
++ Bayesian fusion).
 
-Run:
-    streamlit run network_app_final.py
+Run (from the project root, with .venv activated):
+    streamlit run src/app.py
 """
 
-import streamlit as st
-import pandas as pd
-import numpy as np
 import json
-import pickle
-from pathlib import Path
+import sys
 from datetime import datetime
-from sklearn.preprocessing import LabelEncoder
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import streamlit as st
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from config import METRICS_JSON, MODELS_DIR, SEVERITY, SOLUTIONS  # noqa: E402
+from hybrid_system import HybridDiagnosticSystem  # noqa: E402
 
 # ============================================================================
 # PAGE CONFIG
@@ -89,162 +91,76 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ============================================================================
-# CONSTANTS — must match training pipeline exactly
-# ============================================================================
-
-NUMERIC_FEATURES = [
-    "ping_gateway", "has_ip", "ping_ip", "ping_domain",
-    "ip_conflict", "arp_table_ok", "subnet_matches_gw",
-    "dns_response_time_ms", "packet_loss_pct", "traceroute_hops",
-]
-CATEGORICAL_FEATURES = ["network_type", "os_type"]
-TEXT_FEATURE = "symptom_text"
-DROP_COLS = ["solutions", "timestamp", "dataset_version", "severity"]
-
-SOLUTIONS = {
-    "Router Issue": [
-        "Check if router is powered on — verify all indicator lights",
-        "Power cycle: unplug router for 30s then reconnect",
-        "Check WAN/Internet cable between router and modem",
-        "Verify ISP service is active — call ISP or check status page",
-        "Check router WAN IP in admin panel (usually 192.168.1.1)",
-        "Update router firmware from manufacturer website",
-        "Review router logs for PPPoE or DHCP errors from ISP",
-        "Factory reset router if all else fails",
-    ],
-    "DNS Issue": [
-        "Change DNS to Google (8.8.8.8, 8.8.4.4) or Cloudflare (1.1.1.1)",
-        "Flush DNS cache — Windows: ipconfig /flushdns",
-        "Flush DNS cache — macOS: sudo dscacheutil -flushcache",
-        "Test with nslookup google.com to confirm DNS failure",
-        "Restart network adapter to clear DNS state",
-        "Check router DNS settings in admin panel",
-        "Try alternate DNS: Quad9 (9.9.9.9) or OpenDNS (208.67.222.222)",
-        "Disable DNS-over-HTTPS temporarily to test",
-    ],
-    "DNS Timeout": [
-        "Test DNS timeout: nslookup -timeout=5 google.com",
-        "Switch to a faster DNS server (1.1.1.1 is fastest globally)",
-        "Flush DNS cache — Windows: ipconfig /flushdns",
-        "Check if UDP port 53 is blocked by local firewall",
-        "Ping 1.1.1.1 — if that works but DNS times out, ISP is throttling",
-        "Contact ISP — their DNS resolver may be degraded",
-        "Enable DNS over HTTPS/TLS to bypass ISP interference",
-        "Restart router to reset DNS cache and forwarder state",
-    ],
-    "IP Conflict": [
-        "Identify conflicting device: arp -a | look for duplicate MACs",
-        "Release IP: ipconfig /release (Windows) or sudo dhclient -r",
-        "Renew IP: ipconfig /renew or sudo dhclient",
-        "If using static IP, move it outside DHCP pool range",
-        "Set DHCP reservations in router to prevent future conflicts",
-        "Check DHCP pool size — expand if needed",
-        "Restart router to clear stale DHCP lease table",
-        "Reserve MAC-to-IP bindings for all static devices in router",
-    ],
-    "DHCP Failure": [
-        "Verify DHCP is enabled in router admin panel",
-        "Release and renew: ipconfig /release && ipconfig /renew",
-        "Power cycle router — 30s off clears DHCP server state",
-        "Check DHCP pool is not exhausted (add more addresses)",
-        "Temporarily assign a static IP to confirm it is a DHCP issue",
-        "Check if device is in a VLAN that can reach the DHCP server",
-        "Increase DHCP lease time in router settings",
-        "Reset router DHCP scope to defaults",
-    ],
-    "Gateway Unreachable": [
-        "Verify gateway IP: route print (Windows) or ip route show (Linux)",
-        "Ping gateway: ping <gateway_ip> — confirm it is unreachable",
-        "Re-enter correct default gateway in network settings",
-        "Check if gateway device is powered on and its port is active",
-        "Restart your network adapter",
-        "Check routing table for stale or conflicting routes",
-        "Reset TCP/IP stack: netsh int ip reset (Windows)",
-        "Verify no firewall rule is blocking ICMP to gateway",
-    ],
-    "Network Adapter Issue": [
-        "Open Device Manager — check for yellow ! on network adapter",
-        "Right-click adapter → Enable if disabled",
-        "Check physical cable connection — try a different cable",
-        "Update driver: Device Manager → Update driver",
-        "Uninstall adapter in Device Manager then reboot to reinstall",
-        "Try a different USB or PCIe NIC to isolate hardware failure",
-        "Run Windows Network Diagnostics or Linux ethtool -t eth0",
-        "Replace NIC if driver reinstall does not resolve it",
-    ],
-    "Subnet Mismatch": [
-        "Check device IP and mask: ipconfig /all or ip addr",
-        "Identify gateway IP and its subnet",
-        "Verify device subnet contains the gateway IP (use subnet calculator)",
-        "Example correct config: device 192.168.1.50/24, gateway 192.168.1.1",
-        "Set correct subnet mask: 255.255.255.0 for /24 networks",
-        "If using static IP, reconfigure with matching subnet",
-        "Check DHCP server subnet option — it may be misconfigured",
-        "Restart network after fixing subnet to apply changes",
-    ],
-}
-
-SEVERITY = {
-    "Network Adapter Issue": "High",
-    "DHCP Failure":          "High",
-    "IP Conflict":           "High",
-    "Router Issue":          "Medium",
-    "Gateway Unreachable":   "Medium",
-    "Subnet Mismatch":       "Medium",
-    "DNS Issue":             "Low",
-    "DNS Timeout":           "Low",
-}
-
-# ============================================================================
 # LOAD MODEL  (matches new pipeline: models/pipeline.pkl + models/encoders.pkl)
 # ============================================================================
 
-@st.cache_resource(show_spinner="Loading AI model...")
-def load_model():
-    model_dir = Path("models")
-    pipeline_path = model_dir / "pipeline.pkl"
-    encoders_path = model_dir / "encoders.pkl"
+@st.cache_resource(show_spinner="Loading Hybrid AI model...")
+def load_hybrid_system():
+    try:
+        return HybridDiagnosticSystem(models_dir=MODELS_DIR)
+    except Exception as e:
+        st.error(f"Failed to load hybrid system: {e}")
+        return None
 
-    if not pipeline_path.exists():
-        return None, None
 
-    with open(pipeline_path, "rb") as f:
-        pipeline = pickle.load(f)
-    with open(encoders_path, "rb") as f:
-        encoders = pickle.load(f)
+@st.cache_data
+def load_metrics() -> dict:
+    """Measured metrics written by `python src/evaluate.py` (empty if not run yet)."""
+    try:
+        return json.loads(METRICS_JSON.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
 
-    return pipeline, encoders
+
+def metrics_table() -> str:
+    m = load_metrics()
+    if not m:
+        return "_Run `python src/evaluate.py` to show measured accuracy here._"
+    t = m["test_set"]
+    cv = m["cross_validation"]["rf_train_5fold"]
+    return (
+        "| Metric (synthetic test set) | Value |\n|---|---|\n"
+        f"| RF pipeline accuracy | **{t['rf']['accuracy']:.1%}** |\n"
+        f"| Hybrid (this app) accuracy | **{t['hybrid']['accuracy']:.1%}** |\n"
+        f"| Rule engine only | {t['rules']['accuracy']:.1%} |\n"
+        f"| RF 5-fold CV (train) | {cv['mean']:.1%} +/- {cv['std']:.1%} |\n"
+        f"| Hand-written scenarios (hybrid) | {m['scenarios']['hybrid_correct']}/{m['scenarios']['n_labelled']} |"
+    )
 
 # ============================================================================
 # INFERENCE
 # ============================================================================
 
-def predict(pipeline, encoders, raw_input: dict) -> dict:
+def hybrid_predict(system: "HybridDiagnosticSystem", raw_input: dict) -> dict:
     """
-    Build a single-row DataFrame matching the exact column order expected
-    by the ColumnTransformer, then predict.
-
-    Column order must be:
-        symptom_text  (TEXT_FEATURE — ColumnTransformer picks this by name)
-        ping_gateway, has_ip, ... traceroute_hops  (NUMERIC_FEATURES)
-        network_type, os_type  (CATEGORICAL_FEATURES — already label-encoded)
+    Adapter between Streamlit form data and HybridDiagnosticSystem.diagnose().
+    
+    raw_input keys:
+        symptom_text            : str
+        ping_gateway / has_ip / ping_ip / ping_domain
+        ip_conflict / arp_table_ok / subnet_matches_gw  : int 0 or 1
+        dns_response_time_ms / packet_loss_pct / traceroute_hops : numeric
+        network_type / os_type  : int (label-encoded)
     """
-    row = {TEXT_FEATURE: raw_input[TEXT_FEATURE]}
-    for col in NUMERIC_FEATURES:
-        row[col] = float(raw_input.get(col, 0))
-    for col in CATEGORICAL_FEATURES:
-        row[col] = raw_input.get(col, 0)   # already encoded integer
-
-    df = pd.DataFrame([row])
-
-    proba   = pipeline.predict_proba(df)[0]
-    classes = pipeline.classes_
-    idx     = int(np.argmax(proba))
-
+    symptom_text = raw_input.pop("symptom_text")
+    
+    result = system.diagnose(
+        symptom_text   = symptom_text,
+        features       = raw_input,
+        return_explanation = True,
+    )
+    
+    # Reshape to match what the rest of the app expects
     return {
-        "diagnosis":  classes[idx],
-        "confidence": float(proba[idx]),
-        "all_probs":  {c: round(float(p), 4) for c, p in zip(classes, proba)},
+        "diagnosis":  result["diagnosis"],
+        "confidence": result["confidence"],
+        "all_probs":  result["all_probabilities"],
+        # Extra hybrid fields for display
+        "uncertainty":        result["uncertainty"],
+        "fusion_strategy":    result["fusion_strategy"],
+        "rule_reasons":       (result.get("rule_prediction") or {}).get("reasons", []),
+        "rf_pred":            (result.get("rf_prediction")   or {}).get("diagnosis"),
+        "rule_pred":          (result.get("rule_prediction") or {}).get("diagnosis"),
     }
 
 
@@ -316,15 +232,12 @@ def render_sidebar() -> str:
 
         st.divider()
         st.markdown("### 🤖 Model Info")
-        st.markdown("""
-        | Property | Value |
-        |---|---|
-        | Algorithm | Random Forest |
-        | Features | TF-IDF + Structured |
-        | Test accuracy | **99.6%** |
-        | CV score | 98.75% ± 1.67% |
-        | Version | 3.1 |
-        """)
+        st.markdown(
+            "Hybrid: TF-IDF + Random Forest, RFC rule engine, entropy uncertainty, "
+            "Bayesian fusion."
+        )
+        st.markdown(metrics_table())
+        st.caption("Measured on synthetic data - see docs/RESULTS.md for limitations.")
 
         st.divider()
         st.markdown("### 📋 Quick Tips")
@@ -342,7 +255,7 @@ def render_sidebar() -> str:
 # DIAGNOSE TAB
 # ============================================================================
 
-def render_diagnose(pipeline, encoders):
+def render_diagnose(system):
     st.markdown('<div class="main-header">🔧 Network Troubleshooting Assistant</div>', unsafe_allow_html=True)
     st.markdown('<div class="sub-header">AI-Powered Network Diagnosis — describe your problem in plain English</div>', unsafe_allow_html=True)
 
@@ -493,37 +406,50 @@ def render_diagnose(pipeline, encoders):
             st.rerun()
 
         if submitted:
-            # Encode categoricals using saved LabelEncoders
-            nt_enc, os_enc = encode_categoricals(encoders, net_type, os_type)
-
+            nt_enc, os_enc = encode_categoricals(
+                system.encoders, net_type, os_type
+            )
+ 
             raw = {
-                TEXT_FEATURE:          st.session_state.symptom_text,
-                "ping_gateway":        1 if ping_gw   == "Yes" else 0,
-                "has_ip":              1 if has_ip    == "Yes" else 0,
-                "ping_ip":             1 if ping_ip   == "Yes" else 0,
-                "ping_domain":         1 if ping_dom  == "Yes" else 0,
-                "ip_conflict":         1 if ip_conflict == "Yes" else 0,
-                "arp_table_ok":        1 if arp_ok    == "Yes" else 0,
-                "subnet_matches_gw":   1 if subnet_ok == "Yes" else 0,
-                "dns_response_time_ms": dns_rt,
-                "packet_loss_pct":     pkt_loss,
-                "traceroute_hops":     hops,
-                "network_type":        nt_enc,
-                "os_type":             os_enc,
+                "symptom_text":          st.session_state.symptom_text,
+                "ping_gateway":          1 if ping_gw      == "Yes" else 0,
+                "has_ip":                1 if has_ip       == "Yes" else 0,
+                "ping_ip":               1 if ping_ip      == "Yes" else 0,
+                "ping_domain":           1 if ping_dom     == "Yes" else 0,
+                "ip_conflict":           1 if ip_conflict  == "Yes" else 0,
+                "arp_table_ok":          1 if arp_ok       == "Yes" else 0,
+                "subnet_matches_gw":     1 if subnet_ok    == "Yes" else 0,
+                "dns_response_time_ms":  dns_rt,
+                "packet_loss_pct":       pkt_loss,
+                "traceroute_hops":       hops,
+                "network_type":          nt_enc,
+                "os_type":               os_enc,
             }
-
-            result = predict(pipeline, encoders, raw)
-            result["symptom"]   = st.session_state.symptom_text
-            result["solutions"] = SOLUTIONS.get(result["diagnosis"], [])
-            result["severity"]  = SEVERITY.get(result["diagnosis"], "Medium")
-            result["timestamp"] = datetime.now().isoformat()
-            result["raw_input"] = {k: v for k, v in raw.items() if k != TEXT_FEATURE}
-
+ 
+            h_result = hybrid_predict(system, dict(raw))  # dict() to avoid mutation
+ 
+            result = {
+                "diagnosis":        h_result["diagnosis"],
+                "confidence":       h_result["confidence"],
+                "all_probs":        h_result["all_probs"],
+                "symptom":          st.session_state.symptom_text,
+                "solutions":        SOLUTIONS.get(h_result["diagnosis"], []),
+                "severity":         SEVERITY.get(h_result["diagnosis"], "Medium"),
+                "timestamp":        datetime.now().isoformat(),
+                "raw_input":        {k: v for k, v in raw.items()
+                                     if k != "symptom_text"},
+                # Hybrid-specific fields
+                "uncertainty":      h_result.get("uncertainty", 0.0),
+                "fusion_strategy":  h_result.get("fusion_strategy"),
+                "rule_reasons":     h_result.get("rule_reasons", []),
+                "rf_pred":          h_result.get("rf_pred"),
+                "rule_pred":        h_result.get("rule_pred"),
+            }
+ 
             st.session_state.result  = result
             st.session_state.history.append(result)
             st.session_state.step    = 3
             st.rerun()
-
     # ── STEP 3: Results ───────────────────────────────────────────────────────
     elif step == 3:
         result = st.session_state.result
@@ -556,6 +482,33 @@ def render_diagnose(pipeline, encoders):
             </p>
         </div>
         """, unsafe_allow_html=True)
+
+        # ── Hybrid model info ──────────────────────────────────────────
+        unc      = result.get("uncertainty", 0.0)
+        strategy = result.get("fusion_strategy", "—")
+        rule_reasons = result.get("rule_reasons", [])
+ 
+        st.markdown("#### 🔀 Hybrid model decision")
+        c1, c2 = st.columns(2)
+        c1.metric("Model uncertainty", f"{unc:.1%}")
+        c2.metric("Fusion strategy",   strategy.replace("_", " ").title())
+ 
+        if result.get("rf_pred") and result.get("rule_pred"):
+            if result["rf_pred"] != result["rule_pred"]:
+                st.warning(
+                    f"RF predicted **{result['rf_pred']}**, "
+                    f"rule engine predicted **{result['rule_pred']}** — "
+                    f"Bayesian fusion resolved to **{diag}**."
+                )
+            else:
+                st.success(
+                    f"Both models agreed: **{diag}** (consensus)."
+                )
+ 
+        if rule_reasons:
+            with st.expander("RFC rule reasoning"):
+                for r in rule_reasons:
+                    st.markdown(f"- {r}")
 
         # ── Probability chart across all 8 classes ────────────────────────────
         st.markdown("#### 📊 Model confidence across all issue types")
@@ -733,8 +686,8 @@ def render_about():
 - Algorithm: Random Forest (200 trees, balanced class weights)
 - Text features: TF-IDF (100 unigram + bigram features on symptom description)
 - Structured features: 10 binary/numeric diagnostic flags + 2 categorical
-- Feature engineering: `ColumnTransformer` (sklearn) — no data leakage
-- Test accuracy: **99.6%** | CV: 98.75% ± 1.67%
+- Feature engineering: `ColumnTransformer` (sklearn)
+- Hybrid layer: RFC rule engine + entropy uncertainty + Bayesian fusion
 
 **Pipeline architecture:**
 ```
@@ -811,38 +764,23 @@ traceroute 8.8.8.8        # Linux / macOS
 
 def main():
     init_state()
-
-    pipeline, encoders = load_model()
-
+ 
+    # Replace:  pipeline, encoders = load_model()
+    # With:
+    system = load_hybrid_system()
+ 
     mode = render_sidebar()
-
-    if pipeline is None:
-        st.error("""
-## ⚠️ Model not found in `models/` directory
-
-Please train the model first, then restart the app:
-
-```bash
-python network_dataset_generator.py    # generate network_dataset_v3.csv
-python network_troubleshooting_training.py  # train → saves models/pipeline.pkl
-streamlit run network_app_final.py     # launch app
-```
-        """)
+ 
+    if system is None:
+        st.error("Model not found — run training scripts first.")
         return
-
+ 
     if mode == "🔍 Diagnose":
-        render_diagnose(pipeline, encoders)
+        render_diagnose(system)        # <-- pass system, not pipeline+encoders
     elif mode == "📊 History":
         render_history()
     elif mode == "ℹ️ About":
         render_about()
-
-    # Footer
-    st.divider()
-    f1, f2, f3 = st.columns(3)
-    f1.markdown("**Made with ❤️ using Streamlit**")
-    f2.markdown("v3.1 | Network Troubleshooting AI")
-    f3.markdown("© 2026 | ML-Powered Diagnostics")
 
 
 if __name__ == "__main__":

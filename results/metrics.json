@@ -1,0 +1,351 @@
+{
+  "dataset": {
+    "n": 1200,
+    "n_train": 960,
+    "n_test": 240,
+    "per_class": {
+      "Subnet Mismatch": 150,
+      "Gateway Unreachable": 150,
+      "Router Issue": 150,
+      "DNS Timeout": 150,
+      "Network Adapter Issue": 150,
+      "DNS Issue": 150,
+      "IP Conflict": 150,
+      "DHCP Failure": 150
+    }
+  },
+  "test_set": {
+    "rf": {
+      "accuracy": 0.9958333333333333,
+      "macro_f1": 0.9958321756043346,
+      "errors": 1,
+      "n": 240
+    },
+    "rules": {
+      "accuracy": 0.9416666666666667,
+      "macro_f1": 0.9417199844721513,
+      "errors": 14,
+      "n": 240
+    },
+    "hybrid": {
+      "accuracy": 0.9541666666666667,
+      "macro_f1": 0.9543908504974079,
+      "errors": 11,
+      "n": 240
+    },
+    "hybrid_vs_rf": {
+      "changed": 10,
+      "fixed": 0,
+      "broken": 10
+    },
+    "fusion_strategies": {
+      "consensus": 227,
+      "rule_override": 8,
+      "bayesian_fusion": 5
+    },
+    "rf_errors": [
+      {
+        "true": "Gateway Unreachable",
+        "pred": "Subnet Mismatch"
+      }
+    ],
+    "accuracy_by_strategy": {
+      "bayesian_fusion": {
+        "n": 5,
+        "hybrid_accuracy": 0.6
+      },
+      "consensus": {
+        "n": 227,
+        "hybrid_accuracy": 0.9955947136563876
+      },
+      "rule_override": {
+        "n": 8,
+        "hybrid_accuracy": 0.0
+      }
+    }
+  },
+  "rules_full_dataset_accuracy": 0.935,
+  "cross_validation": {
+    "rf_train_5fold": {
+      "mean": 0.9958333333333332,
+      "std": 0.0020833333333333485,
+      "folds": [
+        1.0,
+        0.9947916666666666,
+        0.9947916666666666,
+        0.9947916666666666,
+        0.9947916666666666
+      ]
+    },
+    "original_method_cv_on_test_set_only": {
+      "mean": 0.9875,
+      "std": 0.016666666666666656,
+      "folds": [
+        1.0,
+        0.9583333333333334,
+        1.0,
+        0.9791666666666666,
+        1.0
+      ],
+      "note": "what the original training script reported; each fold trains on 192 test samples"
+    }
+  },
+  "ablation_test_accuracy": {
+    "decision_tree_structured_depth5": 0.9333333333333333,
+    "rf_structured_only": 0.9541666666666667,
+    "tfidf_text_only": 1.0,
+    "rule_engine_only": 0.9416666666666667,
+    "rf_tfidf_plus_structured": 0.9958333333333333,
+    "hybrid_full": 0.9541666666666667
+  },
+  "text_diagnostics": {
+    "unique_sentences_per_class": {
+      "DHCP Failure": 20,
+      "DNS Issue": 20,
+      "DNS Timeout": 20,
+      "Gateway Unreachable": 20,
+      "IP Conflict": 20,
+      "Network Adapter Issue": 20,
+      "Router Issue": 20,
+      "Subnet Mismatch": 20
+    },
+    "test_sentences_seen_in_training": 1.0,
+    "sentences_shared_by_two_classes": [
+      "cannot ping the default gateway address"
+    ],
+    "rf_accuracy_with_shuffled_text": 0.875
+  },
+  "uncertainty": {
+    "rf_uncertainty_mean_correct": 0.1331688895261004,
+    "rf_uncertainty_mean_wrong": 0.5581644140832344,
+    "share_flagged_u_gt_0.30": 0.10833333333333334,
+    "rf_ece": 0.07120014917577587,
+    "hybrid_ece": 0.04219836902675047
+  },
+  "scenarios": {
+    "n_labelled": 9,
+    "rf_correct": 9,
+    "rules_correct": 8,
+    "hybrid_correct": 8,
+    "n_ambiguous": 6,
+    "hybrid_plausible_on_ambiguous": 6,
+    "rows": [
+      {
+        "id": 1,
+        "name": "Mixed router failure",
+        "ambiguous": false,
+        "expected": [
+          "Router Issue"
+        ],
+        "rf": "Router Issue",
+        "rules": "Gateway Unreachable",
+        "hybrid": "Gateway Unreachable",
+        "strategy": "bayesian_fusion",
+        "rf_uncertainty": 0.246,
+        "hybrid_confidence": 0.487
+      },
+      {
+        "id": 2,
+        "name": "Subtle DNS issue",
+        "ambiguous": false,
+        "expected": [
+          "DNS Issue"
+        ],
+        "rf": "DNS Issue",
+        "rules": "DNS Issue",
+        "hybrid": "DNS Issue",
+        "strategy": "consensus",
+        "rf_uncertainty": 0.276,
+        "hybrid_confidence": 0.869
+      },
+      {
+        "id": 3,
+        "name": "DNS timeout (tricky)",
+        "ambiguous": false,
+        "expected": [
+          "DNS Timeout"
+        ],
+        "rf": "DNS Timeout",
+        "rules": "DNS Timeout",
+        "hybrid": "DNS Timeout",
+        "strategy": "consensus",
+        "rf_uncertainty": 0.359,
+        "hybrid_confidence": 0.774
+      },
+      {
+        "id": 4,
+        "name": "IP conflict (real-world style)",
+        "ambiguous": false,
+        "expected": [
+          "IP Conflict"
+        ],
+        "rf": "IP Conflict",
+        "rules": "IP Conflict",
+        "hybrid": "IP Conflict",
+        "strategy": "consensus",
+        "rf_uncertainty": 0.049,
+        "hybrid_confidence": 0.99
+      },
+      {
+        "id": 5,
+        "name": "DHCP failure (edge case)",
+        "ambiguous": false,
+        "expected": [
+          "DHCP Failure"
+        ],
+        "rf": "DHCP Failure",
+        "rules": "DHCP Failure",
+        "hybrid": "DHCP Failure",
+        "strategy": "consensus",
+        "rf_uncertainty": 0.415,
+        "hybrid_confidence": 0.919
+      },
+      {
+        "id": 6,
+        "name": "Gateway unreachable",
+        "ambiguous": false,
+        "expected": [
+          "Gateway Unreachable"
+        ],
+        "rf": "Gateway Unreachable",
+        "rules": "Gateway Unreachable",
+        "hybrid": "Gateway Unreachable",
+        "strategy": "consensus",
+        "rf_uncertainty": 0.549,
+        "hybrid_confidence": 0.81
+      },
+      {
+        "id": 7,
+        "name": "Network adapter issue",
+        "ambiguous": false,
+        "expected": [
+          "Network Adapter Issue"
+        ],
+        "rf": "Network Adapter Issue",
+        "rules": "Network Adapter Issue",
+        "hybrid": "Network Adapter Issue",
+        "strategy": "consensus",
+        "rf_uncertainty": 0.134,
+        "hybrid_confidence": 1.0
+      },
+      {
+        "id": 8,
+        "name": "Subnet mismatch",
+        "ambiguous": false,
+        "expected": [
+          "Subnet Mismatch"
+        ],
+        "rf": "Subnet Mismatch",
+        "rules": "Subnet Mismatch",
+        "hybrid": "Subnet Mismatch",
+        "strategy": "consensus",
+        "rf_uncertainty": 0.611,
+        "hybrid_confidence": 0.814
+      },
+      {
+        "id": 9,
+        "name": "Hybrid: DNS issue vs timeout",
+        "ambiguous": true,
+        "expected": [
+          "DNS Issue",
+          "DNS Timeout"
+        ],
+        "rf": "DNS Issue",
+        "rules": "DNS Issue",
+        "hybrid": "DNS Issue",
+        "strategy": "consensus",
+        "rf_uncertainty": 0.52,
+        "hybrid_confidence": 0.792
+      },
+      {
+        "id": 10,
+        "name": "Hybrid: router vs gateway",
+        "ambiguous": true,
+        "expected": [
+          "Router Issue",
+          "Gateway Unreachable"
+        ],
+        "rf": "Router Issue",
+        "rules": "Router Issue",
+        "hybrid": "Router Issue",
+        "strategy": "consensus",
+        "rf_uncertainty": 0.126,
+        "hybrid_confidence": 0.914
+      },
+      {
+        "id": 11,
+        "name": "Traceroute dies at first hop",
+        "ambiguous": true,
+        "expected": [
+          "Gateway Unreachable",
+          "Router Issue"
+        ],
+        "rf": "Gateway Unreachable",
+        "rules": "Gateway Unreachable",
+        "hybrid": "Gateway Unreachable",
+        "strategy": "consensus",
+        "rf_uncertainty": 0.661,
+        "hybrid_confidence": 0.76
+      },
+      {
+        "id": 12,
+        "name": "Missing default gateway (OS output)",
+        "ambiguous": false,
+        "expected": [
+          "Gateway Unreachable"
+        ],
+        "rf": "Gateway Unreachable",
+        "rules": "Gateway Unreachable",
+        "hybrid": "Gateway Unreachable",
+        "strategy": "consensus",
+        "rf_uncertainty": 0.451,
+        "hybrid_confidence": 0.857
+      },
+      {
+        "id": 13,
+        "name": "Real user complaint",
+        "ambiguous": true,
+        "expected": [
+          "Router Issue",
+          "Gateway Unreachable"
+        ],
+        "rf": "Router Issue",
+        "rules": "Router Issue",
+        "hybrid": "Router Issue",
+        "strategy": "consensus",
+        "rf_uncertainty": 0.191,
+        "hybrid_confidence": 0.891
+      },
+      {
+        "id": 14,
+        "name": "DNS misleading case",
+        "ambiguous": true,
+        "expected": [
+          "DNS Issue",
+          "DNS Timeout"
+        ],
+        "rf": "DNS Issue",
+        "rules": "DNS Issue",
+        "hybrid": "DNS Issue",
+        "strategy": "consensus",
+        "rf_uncertainty": 0.513,
+        "hybrid_confidence": 0.706
+      },
+      {
+        "id": 15,
+        "name": "Adapter vs DHCP confusion",
+        "ambiguous": true,
+        "expected": [
+          "Network Adapter Issue",
+          "DHCP Failure"
+        ],
+        "rf": "Network Adapter Issue",
+        "rules": "Network Adapter Issue",
+        "hybrid": "Network Adapter Issue",
+        "strategy": "consensus",
+        "rf_uncertainty": 0.448,
+        "hybrid_confidence": 0.927
+      }
+    ]
+  }
+}

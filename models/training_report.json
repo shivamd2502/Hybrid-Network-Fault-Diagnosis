@@ -1,0 +1,38 @@
+{
+  "trained_at": "2026-11-05T19:06:09",
+  "dataset": "network_dataset_v3.csv",
+  "n_train": 960,
+  "n_test": 240,
+  "cv_train_mean": 0.9958333333333332,
+  "cv_train_std": 0.0020833333333333485,
+  "cv_train_folds": [
+    1.0,
+    0.9947916666666666,
+    0.9947916666666666,
+    0.9947916666666666,
+    0.9947916666666666
+  ],
+  "train_accuracy": 1.0,
+  "test_accuracy": 0.9958333333333333,
+  "classes": [
+    "DHCP Failure",
+    "DNS Issue",
+    "DNS Timeout",
+    "Gateway Unreachable",
+    "IP Conflict",
+    "Network Adapter Issue",
+    "Router Issue",
+    "Subnet Mismatch"
+  ],
+  "encoders": {
+    "network_type": [
+      "Ethernet",
+      "WiFi"
+    ],
+    "os_type": [
+      "Linux",
+      "Windows",
+      "macOS"
+    ]
+  }
+}

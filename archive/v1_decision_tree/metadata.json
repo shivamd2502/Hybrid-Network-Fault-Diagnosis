@@ -1,0 +1,55 @@
+{
+    "model_type": "DecisionTreeClassifier",
+    "feature_names": [
+        "ping_gateway",
+        "has_ip",
+        "ping_ip",
+        "ping_domain",
+        "ip_conflict",
+        "network_type",
+        "os_type",
+        "recently_updated",
+        "vpn_enabled",
+        "firewall_enabled"
+    ],
+    "class_names": [
+        "DHCP Failure",
+        "DNS Issue",
+        "DNS Timeout",
+        "Gateway Unreachable",
+        "IP Conflict",
+        "Network Adapter Issue",
+        "Router Issue",
+        "Subnet Mismatch"
+    ],
+    "encoders": {
+        "network_type": {
+            "classes_": [
+                "Ethernet",
+                "WiFi"
+            ]
+        },
+        "os_type": {
+            "classes_": [
+                "Linux",
+                "Windows",
+                "macOS"
+            ]
+        }
+    },
+    "tree_depth": 5,
+    "n_leaves": 31,
+    "trained_at": "2026-04-10T17:09:13.398874",
+    "feature_importances": {
+        "ping_gateway": 0.2871573216518213,
+        "has_ip": 0.256103754106043,
+        "ping_ip": 0.0703700451088888,
+        "ping_domain": 0.022050401107727505,
+        "ip_conflict": 0.3086739408689874,
+        "network_type": 0.006637249818849295,
+        "os_type": 0.01803631424720325,
+        "recently_updated": 0.0005776328740264154,
+        "vpn_enabled": 0.026202670346065375,
+        "firewall_enabled": 0.004190669870387735
+    }
+}
